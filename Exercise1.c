@@ -6,44 +6,49 @@
 
 gmp_randstate_t gmpRandState;
 
-void convert_msg_to_int(mpz_t result, char *msg)
+void convert_plaintext_to_ascii(mpz_t ascii_plaintext, char *plaintext)
 {
-    int len = strlen(msg);
+    int len = strlen(plaintext);
 
     // Καθώς ο χαρακτήρας πιάνει μία θέση μνήμης, ενώ ο ακέραιος ascii στον οποίο
-    // αντιστοιχεί 2-3 άρα το μέγεθος της συμβολοσειράς ascii_str θα είναι x3 το μέγεθος του αρχικού μηνύματος
+    // αντιστοιχεί o χαρακτήρας 2-3 άρα το μέγεθος της συμβολοσειράς ascii_str θα είναι στο μέγιστο x3 το μέγεθος του αρχικού μηνύματος.
     char *ascii_str = malloc(3 * len);
     char ascii_char[3];
 
     for (int i = 0; i < len; i++) {
         // Μετατροπή ενός χαρακτήρα του μηνύματος σε έναν ακέραιο πχ h -> 104.
-        int asci_int = msg[i];
+        int ascii_int = plaintext[i];
 
         // Αντιστοιχούμε τον χαρακτήρα '\n' με το 30.
-        if (asci_int == 10) asci_int = 30;
+        if (ascii_int == 10) ascii_int = 30;
 
         // Μετατροπή του ακεραίου σε μία ακολουθία τριών χαρακτήρων πχ 104 -> "104".
-        itoa(asci_int, ascii_char, 10);
+        sprintf(ascii_char, "%d", ascii_int);
 
+        // Εισαγωγή των χαρακτήρων στον πίνακα ascii_str.
         if (i == 0) strcpy(ascii_str, ascii_char);
         else strcat(ascii_str, ascii_char);
     }
 
+    char *tmp = realloc(ascii_str, strlen(ascii_str) + 1);
+    if (tmp == NULL) printf("Realloc has failed, program will exit now.\n"), exit(EXIT_FAILURE);
+    else ascii_str = tmp;
+
     // Μετατροπή της συμβολοσειράς ascii_str σε έναν ακέραιο mpz_t
-    mpz_set_str(result, ascii_str, 10);
+    mpz_set_str(ascii_plaintext, ascii_str, 10);
 }
 
-char *convert_int_to_msg(mpz_t param)
+char *convert_ascii_to_plaintext(mpz_t ascii_plaintext)
 {
-    int ascii_msg_len = mpz_sizeinbase(param, 10);
-    int asci_int, final_msg_length, cnt = 0;
+    int ascii_msg_len = mpz_sizeinbase(ascii_plaintext, 10);
+    int asci_int, cnt = 0;
 
     char *ascii_msg = malloc(ascii_msg_len + 1);
-    char *final_msg = malloc(ascii_msg_len + 1);
+    char *plaintext = malloc(ascii_msg_len + 1);
     char c, ascii_char[3];
 
     // Μετατροπή του ακεραίου mpz_t σε συμβολοσειρά.
-    mpz_get_str(ascii_msg, 10, param);
+    mpz_get_str(ascii_msg, 10, ascii_plaintext);
 
     for (int i = 0; i < ascii_msg_len; i = i + 2) {
         // Αντιγραφή δύο ακεραίων από την ακολουθία ascii στον πίνακα ascii_char.
@@ -60,130 +65,131 @@ char *convert_int_to_msg(mpz_t param)
             asci_int = atoi(ascii_char);
         }
 
-        // Επαναφορά της τιμής '\n' που προηγουμένος είχε αλλάξει σε 30.
+        // Επαναφορά της τιμής '\n' που προηγουμένως είχε αλλάξει σε 30.
         else if (asci_int == 30) asci_int = 10;
 
         // Μετατροπή του ακεραίου σε χαρακτήρα πχ "97" -> a.
         c = (char) asci_int;
 
         // Αποθήκευση του χαρακτήρα στην τελική συμβολοσειρά.
-        final_msg[cnt++] = c;
+        plaintext[cnt++] = c;
 
         // Εισαγωγή του χαρακτήρα '\0' στο τελευταίο κελί έτσι ώστε τα αποτελέσματα από τον προηγούμενο χαρακτήρα να μην επηρεάσουν τον επόμενο.
         ascii_char[2] = '\0';
     }
 
-    final_msg[cnt] = '\0';
-    final_msg_length = strlen(final_msg);
+    plaintext[cnt] = '\0';
 
-    final_msg = (char *) realloc(final_msg, final_msg_length + 1);
+    char *tmp = realloc(plaintext, strlen(plaintext) + 1);
+    if (tmp == NULL) printf("Realloc has failed, program will exit now.\n"), exit(EXIT_FAILURE);
+    else plaintext = tmp;
 
-    return final_msg;
+    return plaintext;
 }
 
 void gen_keys(mpz_t n, mpz_t e, mpz_t d, int bits)
 {
-    int p_bits;
+    mpz_t rand_num, p, q, phi;
+    mpz_inits(rand_num, p, q, phi, NULL);
 
-    mpz_t tmp, rand_num, p1, p2, phi;
-    mpz_inits(tmp, rand_num, p1, p2, phi, NULL);
-
-    mpz_init_set_ui(tmp, 47);
-
-//    mpz_urandomb(rand_num, gmpRandState, 47);
+    // Δημιουργία ενός τυχαίου αριθμού όπου το μέγεθος του σε bit δίνεται με όρισμα.
     mpz_urandomb(rand_num, gmpRandState, bits);
-//    mpz_urandomm(rand_num, gmpRandState, tmp);
 
-    gmp_printf("rand num: %Zd ------------------------\n", rand_num);
+    // Οι πρώτοι αριθμοί p,q είναι οι επόμενοι 2 πρώτοι μετά τον τυχαίο αριθμό.
+    mpz_nextprime(p, rand_num);
+    mpz_nextprime(q, p);
 
-    mpz_nextprime(p1, rand_num);
-    mpz_nextprime(p2, p1);
+    // Υπολογισμός της τιμής n = p*q
+    mpz_mul(n, p, q);
 
-    gmp_printf("p1: %Zd ------------------------------ \n", p1);
+    mpz_sub_ui(p, p, 1);
+    mpz_sub_ui(q, q, 1);
 
-    p_bits = mpz_sizeinbase(p1, 2);
-    printf("p1 bits_2: %d\n", p_bits);
-//    printf("p1 bits in base 2: %d\n", p_bits);
+    // φ = (p-1) * (q-1)
+    mpz_mul(phi, p, q);
 
-    p_bits = mpz_sizeinbase(p1, 10);
-    printf("p1 bits_10: %d\n", p_bits);
-//    printf("p1 bits in base 10: %d\n", p_bits);
+    // Επανάληψη μέχρι να βρεθεί ένα e το οποίο να είναι αντιστρέψιμο στο Zφ.
+    do
+    {
+        mpz_urandomb(rand_num, gmpRandState, 7);
+        mpz_nextprime(e, rand_num);
 
-    mpz_mul(n, p1, p2);
-    gmp_printf("n: %Zd -------------------------------\n", n);
+        // Υπολογισμός του d o οποίος είναι ο αντίστροφος του e στο Ζφ.
+        mpz_invert(d, e, phi);
+    }
+    while (mpz_cmp_ui(d, 0) < 1);
 
-    int n_bits_base_2, n_bits_base_10;
-
-    n_bits_base_2 = mpz_sizeinbase(n, 2);
-//    printf("n bits in base 2: %d\n", n_bits_base_2);
-    printf("n bits_2: %d\n", n_bits_base_2);
-
-    n_bits_base_10 = mpz_sizeinbase(n, 10);
-    printf("n bits_10: %d\n", n_bits_base_10);
-//    printf("n bits in base 10: %d\n", n_bits_base_10);
-
-    mpz_sub_ui(p1, p1, 1);
-    mpz_sub_ui(p2, p2, 1);
-
-    mpz_mul(phi, p1, p2);
-
-    mpz_invert(d, e, phi);
-
-//    mpz_clears(p1, p2, 0);
-    mpz_clears(tmp, rand_num, p1, p2, phi, NULL);
+    mpz_clears(rand_num, p, q, phi, NULL);
 }
 
-void decryptMsg(mpz_t res, mpz_t c, mpz_t d, mpz_t n)
+void encryptMsg(mpz_t c, mpz_t n, mpz_t e, char *plaintext)
 {
-    mpz_powm(res, c, d, n);
+    mpz_t ascii_plaintext;
+    mpz_init(ascii_plaintext);
+
+    // Μετατροπή του κειμένου σε μία ακολουθία ascii.
+    convert_plaintext_to_ascii(ascii_plaintext, plaintext);
+    gmp_printf("plaintext in ascii: %Zd \n", ascii_plaintext);
+
+    // Το πρόγραμμα τερματίζει εάν το μήνυμα ξεπερνάει το εύρος [0, n-1].
+    if (mpz_cmp(ascii_plaintext, n) >= 0)
+    {
+        gmp_printf("your message exceeds maximum message length: %Zd \n", n);
+        exit(EXIT_FAILURE);
+    }
+
+    // Υπολογισμός της τιμής c = m^e mod n
+    mpz_powm(c, ascii_plaintext, e, n);
+    mpz_clear(ascii_plaintext);
+}
+
+char *decryptMsg(mpz_t c, mpz_t d, mpz_t n)
+{
+    mpz_t decr_ascii_plaintext;
+    mpz_init(decr_ascii_plaintext);
+
+    // Υπολογισμός της τιμής m = c^d mod n
+    mpz_powm(decr_ascii_plaintext, c, d, n);
+    gmp_printf("ascii plaintext after decryption: %Zd \n", decr_ascii_plaintext);
+
+    // Μετατροπή του μηνύματος από ascii στο αρχικό κείμενο.
+    char *msg = convert_ascii_to_plaintext(decr_ascii_plaintext);
+
+    mpz_clear(decr_ascii_plaintext);
+    return msg;
 }
 
 int main()
 {
-    mpz_t n, e, d, c, m1, m2;
-    mpz_inits(n, e, d, c, m1, m2, NULL);
-
-    //    char *msg = "hello";
-        char *msg = "hello my name is alex";
-//    char *msg = "hi my name is alex\n"
-//                "this is a sentence sentence \n"
-//                "this is another sentence \n";
-
-    printf("orisinal msg: %s \n", msg);
-
-    convert_msg_to_int(m1, msg);
-    gmp_printf("m1 msg: %Zd -------------------------- \n", m1);
-
-    mpz_init_set_ui(e, 101);
-    mpz_nextprime(e, e);
-
     srand(time(NULL));
-//    gmp_randinit_default(gmpRandState);
     gmp_randinit(gmpRandState, GMP_RAND_ALG_LC, 120);
     gmp_randseed_ui(gmpRandState, rand());
 
-    int msg_bits_base_10, msg_bits_base_2;
+    mpz_t n, e, d, c, m1, m2;
+    mpz_inits(n, e, d, c, m1, m2, NULL);
 
-    msg_bits_base_2 = mpz_sizeinbase(m1, 2);
-    printf("msg bits_2: %d\n", msg_bits_base_2);
-//    printf("msg bits in base 2: %d\n", msg_bits_base_2);
+    // Εισαγωγή μηνύματος εδώ.
+    char *plaintext = "Cryptography is the practice of techniques for communication in the presence of third parties called adversaries";
 
-    msg_bits_base_10 = mpz_sizeinbase(m1, 10);
-    printf("msg bits_10: %d\n", msg_bits_base_10);
-//    printf("msg bits in base 10: %d\n", msg_bits_base_10);
+    // Δημιουργία δημόσιου και ιδιωτικού κλειδιού 512 bit.
+    gen_keys(n, e, d, 512);
 
-//    gen_keys(n, e, d, 3*msg_bits_base_2 / 2);
-//    gen_keys(n, e, d, 4 * msg_bits_base_2 / 3);
-//    gen_keys(n, e, d, msg_bits_base_2 - 15);
-    gen_keys(n, e, d, msg_bits_base_2);
+    printf("public key --------------------------------------------------------------------------------------------\n");
+    gmp_printf("n: %Zd\n", n);
+    gmp_printf("e: %Zd\n\n", e);
 
-    mpz_powm(c, m1, e, n);
-    mpz_powm(m2, c, d, n);
+    printf("private key -------------------------------------------------------------------------------------------\n");
+    gmp_printf("d: %Zd\n\n", d);
 
-    gmp_printf("m2 msg: %Zd \n", m2);
+    printf("encryption --------------------------------------------------------------------------------------------\n");
+    printf("plaintext: %s \n", plaintext);
 
-    char *new_msg = convert_int_to_msg(m2);
-    printf("msg after decryption: %s \n", new_msg);
+    encryptMsg(c, n, e, plaintext);
+    gmp_printf("ciphertext: %Zd\n\n", c);
+
+    printf("decryption --------------------------------------------------------------------------------------------\n");
+    char *decrypted_plaintext = decryptMsg(c, d, n);
+    printf("plaintext after decryption: %s \n", decrypted_plaintext);
 
     gmp_randclear(gmpRandState);
     mpz_clears(n, e, d, c, m1, m2, NULL);

@@ -15,7 +15,8 @@ void convert_plaintext_to_ascii(mpz_t ascii_plaintext, char *plaintext)
     char *ascii_str = malloc(3 * len);
     char ascii_char[3];
 
-    for (int i = 0; i < len; i++) {
+    for (int i = 0; i < len; i++)
+    {
         // Μετατροπή ενός χαρακτήρα του μηνύματος σε έναν ακέραιο πχ h -> 104.
         int ascii_int = plaintext[i];
 
@@ -23,7 +24,7 @@ void convert_plaintext_to_ascii(mpz_t ascii_plaintext, char *plaintext)
         if (ascii_int == 10) ascii_int = 30;
 
         // Μετατροπή του ακεραίου σε μία ακολουθία τριών χαρακτήρων πχ 104 -> "104".
-        itoa(ascii_int, ascii_char, 10);
+        sprintf(ascii_char, "%d", ascii_int);
 
         // Εισαγωγή των χαρακτήρων στον πίνακα ascii_str.
         if (i == 0) strcpy(ascii_str, ascii_char);
@@ -65,7 +66,7 @@ char *convert_ascii_to_plaintext(mpz_t ascii_plaintext)
             asci_int = atoi(ascii_char);
         }
 
-            // Επαναφορά της τιμής '\n' που προηγουμένως είχε αλλάξει σε 30.
+        // Επαναφορά της τιμής '\n' που προηγουμένως είχε αλλάξει σε 30.
         else if (asci_int == 30) asci_int = 10;
 
         // Μετατροπή του ακεραίου σε χαρακτήρα πχ "97" -> a.
@@ -109,9 +110,6 @@ void gen_keys(mpz_t n, mpz_t p, mpz_t q, int bit)
         if (mpz_cmp(tmp1, tmp2) == 0 && mpz_cmp_ui(tmp2, 3) == 0) break;
     }
 
-    gmp_printf("p %Zd\n", p);
-    gmp_printf("q %Zd\n", q);
-
     // n = p * q
     mpz_mul(n, p, q);
 
@@ -123,42 +121,39 @@ void encryptMsg(mpz_t c, mpz_t n, char *plaintext)
     mpz_t ascii_plaintext, modified_ascii_plaintext;
     mpz_inits(ascii_plaintext, modified_ascii_plaintext, NULL);
 
-    char *bin_msg, last_bits[7];
+    char *ascii_plaintext_binary, last_bits[7];
 
     // Μετατροπή του κειμένου σε μία ακολουθία ascii.
     convert_plaintext_to_ascii(ascii_plaintext, plaintext);
     gmp_printf("plaintext in ascii: \n%Zd \n", ascii_plaintext);
 
+    int len = mpz_sizeinbase(ascii_plaintext, 2);
+
+    // μετατροπή του μηνύματος σε δυαδικό.
+    ascii_plaintext_binary = malloc(len + 7);
+    mpz_get_str(ascii_plaintext_binary, 2, ascii_plaintext);
+
+    printf("ascii plaintext in binary: \n%s \n", ascii_plaintext_binary);
+
+    // Αντιγραφή των τελευταίων 6 bit του μηνύματος στην μεταβλητή last_bits
+    strncpy(last_bits, ascii_plaintext_binary + len - 6, 6);
+
+    // Προσθήκη των 6 bit στο τέλος του μηνύματος.
+    strcat(ascii_plaintext_binary, last_bits);
+    ascii_plaintext_binary[len + 6] = '\0';
+
+    printf("ascii plaintext in binary with extra bits: \n%s \n", ascii_plaintext_binary);
+
+    mpz_set_str(modified_ascii_plaintext, ascii_plaintext_binary, 2);
+
+    gmp_printf("ascii plaintext in decimal with extra bits: \n%Zd \n", modified_ascii_plaintext);
+
     // Το πρόγραμμα τερματίζει εάν το μήνυμα ξεπερνάει το εύρος [0, n-1].
-    if (mpz_cmp(ascii_plaintext, n) >= 0)
+    if (mpz_cmp(modified_ascii_plaintext, n) >= 0)
     {
         gmp_printf("your message exceeds maximum message length: \n%Zd \n", n);
         exit(EXIT_FAILURE);
     }
-
-    int len = mpz_sizeinbase(ascii_plaintext, 2);
-
-//    printf("dec msg 1: "); mpz_out_str(stdout, 10, ascii_plaintext); printf("\n");
-//    printf("bin msg 1: "); mpz_out_str(stdout, 2, ascii_plaintext); printf("\n");
-
-    // μετατροπή του μηνύματος σε δυαδικό.
-    bin_msg = malloc(len + 7);
-    mpz_get_str(bin_msg, 2, ascii_plaintext);
-
-//    printf("bin msg 1: %s \n", bin_msg);
-
-    // Αντιγραφή των τελευταίων 6 bit του μηνύματος στην μεταβλητή last_bits
-    strncpy(last_bits, bin_msg + len - 6, 6);
-
-    // Προσθήκη των 6 bit στο τέλος του μηνύματος.
-    strcat(bin_msg, last_bits);
-
-//    printf("bin msg 2: %s \n", bin_msg);
-
-    mpz_set_str(modified_ascii_plaintext, bin_msg, 2);
-
-//    printf("dec msg 2: "); mpz_out_str(stdout, 10, modified_ascii_plaintext); printf("\n");
-//    printf("bin msg 2: "); mpz_out_str(stdout, 2, modified_ascii_plaintext); printf("\n");
 
     // Yπολογισμός της τιμής c = m^2 mod n
     mpz_powm_ui(c, modified_ascii_plaintext, 2, n);
@@ -219,55 +214,46 @@ void calculate_roots(mpz_t arr[], mpz_t n, mpz_t p, mpz_t q, mpz_t c)
 
 void decryptMsg(mpz_t r0, mpz_t *arr)
 {
-    printf("decrypt msg func ----------------------------------------\n");
-
     int root_len_in_bin;
-    char *msg, lastBits1[7], lastBits2[7];
+    char *root, *ascii_plaintext, lastBits1[7], lastBits2[7];
 
     for (int i=0; i<4; i++)
     {
         // Αποθήκευση μιας ρίζας από τον πίνακα arr[] στην μεταβλητή r0.
         mpz_set(r0, arr[i]);
 
-        gmp_printf("r0: %Zd\n", r0);
-
         // Mετατροπή της ρίζας σε δυαδικό.
         root_len_in_bin = mpz_sizeinbase(r0, 2);
 
-        printf("r0 msg len: %d \n", root_len_in_bin);
-//        printf("str len msg: %d \n", strlen(msg));
+        root = malloc(root_len_in_bin + 1);
 
-
-        if (i == 0) msg = malloc(root_len_in_bin + 1);
-        else if (strlen(msg) != root_len_in_bin) msg = realloc(msg, root_len_in_bin + 1);
-
-        mpz_get_str(msg, 2, r0);
-        printf("msg: %s \n", msg);
+        mpz_get_str(root, 2, r0);
 
         // Αποθήκευση των τελευταίων 12 bit, στις μεταβλητές lastBits1, lastBits2.
-        strncpy(lastBits1, msg + root_len_in_bin - 6, 6);
-        strncpy(lastBits2, msg + root_len_in_bin - 12, 6);
+        strncpy(lastBits1, root + root_len_in_bin - 6, 6);
+        strncpy(lastBits2, root + root_len_in_bin - 12, 6);
 
         lastBits1[6] = '\0';
         lastBits2[6] = '\0';
 
-        printf("last bits 1: %s \n", lastBits1);
-        printf("last bits 2: %s \n", lastBits2);
-
         // Σύγκριση των μεταβλητών lastBits1, lastBits2.
         if (strcmp(lastBits1, lastBits2) == 0)
         {
-            //
+            printf("last 6 bits of root %d are replicated\n", i);
+            printf("root in binary: \n%s \n", root);
+            printf("last bits 1: %s \n", lastBits1);
+            printf("last bits 2: %s \n", lastBits2);
 
-            msg = realloc(msg, root_len_in_bin - 5);
-            msg[root_len_in_bin - 6] = '\0';
-            printf("new msg: %s \n", msg);
+            ascii_plaintext = malloc(root_len_in_bin - 5);
 
-            mpz_set_str(r0, msg, 2);
-            gmp_printf("r0: %Zd\n", r0);
+            // Αποκοπή των τελευταίων 6 bit που επαναλαμβάνονται.
+            strncpy(ascii_plaintext, root, root_len_in_bin - 6);
+
+            mpz_set_str(r0, ascii_plaintext, 2);
+            gmp_printf("decrypted plaintext in ascii: \n%Zd \n", r0);
 
             break;
-        }
+        } else free(root);
     }
 }
 
@@ -280,22 +266,30 @@ int main()
     mpz_t n, p, q, c, ascii_msg, r0, arr[4];
     mpz_inits(n, p, q, c, ascii_msg, r0, arr[0], arr[1], arr[2], arr[3], NULL);
 
-//    char *plaintext = "Hello my name is Alice\nMy best friend is Bob";
     char *plaintext = "Hello my name is Alice\nMy best friend is Bob";
-    printf("original msg: %s \n", plaintext);
 
     gen_keys(n, p, q, 200);
 
-    convert_plaintext_to_ascii(ascii_msg, plaintext);
+    printf("public key --------------------------------------------------------------------------------------------\n");
+    gmp_printf("n: %Zd\n", n);
+
+    printf("private key -------------------------------------------------------------------------------------------\n");
+    gmp_printf("p: %Zd\n", p);
+    gmp_printf("q: %Zd\n\n", q);
+
+    printf("encryption --------------------------------------------------------------------------------------------\n");
+    printf("plaintext: \n%s \n", plaintext);
 
     encryptMsg(c, n, plaintext);
+    gmp_printf("ciphertext: \n%Zd\n\n", c);
 
     calculate_roots(arr, n, p, q, c);
 
+    printf("decryption --------------------------------------------------------------------------------------------\n");
     decryptMsg(r0, arr);
 
-    char *new_msg = convert_ascii_to_plaintext(r0);
-    printf("new msg: %s \n", new_msg);
+    char *decrypted_plaintext = convert_ascii_to_plaintext(r0);
+    printf("plaintext after decryption: %s \n", decrypted_plaintext);
 
     gmp_randclear(gmpRandState);
     mpz_clears(n, p, q, c, ascii_msg, r0, arr[0], arr[1], arr[2], arr[3], NULL);
